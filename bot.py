@@ -420,6 +420,9 @@ def show_number_screen(message, chat_id, server_idx, sel_country, chosen1, chose
         "🔥 UNLIMITED FREE NUMBERS CLIENT\n"
         "📊 Status: 🟢 Connected Live\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"1️⃣ `+{chosen1}`\n"
+        f"2️⃣ `+{chosen2}`\n"
+        "_(Tap the number above to copy)_\n\n"
     )
 
     try:
