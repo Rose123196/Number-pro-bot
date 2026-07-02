@@ -497,10 +497,9 @@ def central_callback_router(call):
         show_user_dashboard(call.message)
         return
 
-    # ADMIN ACCESS DENIED
+    # ADMIN ROUTING — forward to admin_callback (handles auth + dispatch)
     if call.data.startswith("admin_") or call.data == "open_owner_panel":
-        if not is_admin(user_id):
-            bot.answer_callback_query(call.id, "❌ Access Denied!", show_alert=True)
+        admin_callback(call)
         return
     # ORDER / CHANGE NUMBER
     if call.data.startswith("order_") or call.data.startswith("change_number_"):
