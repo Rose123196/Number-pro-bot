@@ -817,6 +817,23 @@ def process_auto_detect_apis(message):
         )
 
 
+def broadcast_new_country(country_name):
+    flag = get_flag_from_name(country_name)
+    text = (
+        "━━━━━━━━━━━━━━━━\n"
+        "New County add 🔥\n"
+        "━━━━━━━━━━━━━━━━\n"
+        f"{flag} {country_name}\n"
+        "━━━━━━━━━━━━━━━━\n"
+        "Enjoy ✅"
+    )
+    for uid in list(BOT_STATS["total_users"]):
+        try:
+            bot.send_message(uid, text)
+        except Exception:
+            pass
+
+
 def process_name_api(message):
     user_id = message.from_user.id
     if user_id not in admin_temp_data: return
@@ -829,6 +846,8 @@ def process_name_api(message):
     SERVER_CONFIG.append(new_server)
     safe_save_json(APIS_FILE, SERVER_CONFIG)
     del admin_temp_data[user_id]
+
+    broadcast_new_country(new_server['name'])
 
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("📋 Manage APIs", callback_data="admin_list_apis"))
