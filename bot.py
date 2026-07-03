@@ -40,6 +40,9 @@ def safe_save_json(filename, data):
 
 SERVER_CONFIG = safe_load_json(APIS_FILE, [])
 total_users = set(safe_load_json(USERS_FILE, []))
+KNOWN_COUNTRIES_FILE = "known_countries.json"
+_known_countries_first_run = not os.path.exists(KNOWN_COUNTRIES_FILE)
+known_countries = set(safe_load_json(KNOWN_COUNTRIES_FILE, []))
 
 user_selections = {}
 admin_temp_data = {}
@@ -189,11 +192,11 @@ def check_subscription(user_id):
     if not REQUIRED_CHANNELS:
         return True
     for channel in REQUIRED_CHANNELS:
-        channel_id = channel.get("id")
-        if not channel_id:
+        chat_ref = channel.get("name") or channel.get("id")
+        if not chat_ref:
             continue
         try:
-            status = bot.get_chat_member(channel_id, user_id).status
+            status = bot.get_chat_member(chat_ref, user_id).status
             if status not in ['member', 'administrator', 'creator']:
                 return False
         except Exception as e:
@@ -303,6 +306,16 @@ def get_countries_menu(message, page=0):
     if not country_map:
         bot.send_message(chat_id, "❌ Filhal koi country available nahi hai.")
         return
+
+    # Naye countries detect karo (jo pehle kabhi nahi dekhe) aur users ko notify karo
+    new_found = [c for c in country_map.keys() if c not in known_countries]
+    if new_found:
+        for c in new_found:
+            known_countries.add(c)
+            if not _known_countries_first_run:
+                broadcast_new_country(c)
+        safe_save_json(KNOWN_COUNTRIES_FILE, list(known_countries))
+        globals()['_known_countries_first_run'] = False
 
     sorted_countries = sorted(country_map.keys())
 
@@ -846,8 +859,6 @@ def process_name_api(message):
     SERVER_CONFIG.append(new_server)
     safe_save_json(APIS_FILE, SERVER_CONFIG)
     del admin_temp_data[user_id]
-
-    broadcast_new_country(new_server['name'])
 
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("📋 Manage APIs", callback_data="admin_list_apis"))
