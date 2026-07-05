@@ -9,7 +9,7 @@ import random
 import time
 
 # ---------------- CONFIGURATION ---------------- #
-BOT_TOKEN = "8785193678:AAGCYG4fepLijX7K8vc1D7Aw9HxVMeYJULI"
+BOT_TOKEN = "8197382646:AAEpDilwWR19HK0focuJYfwrwBseQX22a4c"
 LOGO_PATH = "logo.png"
 
 ADMIN_ID = 8927512671
@@ -229,7 +229,7 @@ def send_welcome(message):
             text="⚡ VERIFY & START ✅",
             callback_data="check_join"
         ))
-        text = "⚠️ *Access Denied!*\n\nBot ko use karne ke liye aapko hamare official channels ko join karna lazmi hai. Join karke neeche button par click karein."
+        text = "⚠️ *Access Denied!*\n\nplease fast joining channel ✅."
         delete_last_msg(chat_id)
         try:
             with open(LOGO_PATH, 'rb') as photo:
@@ -259,7 +259,7 @@ def show_user_dashboard(message):
 
     active_servers = [s for s in SERVER_CONFIG if s.get("active", True)]
     if not active_servers:
-        text_off = "❌ *System Offline:* Is waqt backend par koi active server ya stock on nahi hai."
+        text_off = "❌ *System Offline:* PLEASE WAIT ANY NO AVAILABLE COUNTYA."
         delete_last_msg(chat_id)
         sent = bot.send_message(chat_id, text_off, parse_mode="Markdown")
         track_msg(chat_id, sent.message_id)
@@ -283,7 +283,7 @@ def get_countries_menu(message, page=0):
 
     active_servers = [(i, s) for i, s in enumerate(SERVER_CONFIG) if s.get("active", True)]
     if not active_servers:
-        bot.send_message(chat_id, "❌ Koi active server nahi hai.")
+        bot.send_message(chat_id, "❌ NO AVAILABLE COUNTY please wait.")
         return
 
     # Saare servers se countries collect — country_map = { clean_name: server_idx }
@@ -304,7 +304,7 @@ def get_countries_menu(message, page=0):
                 continue
 
     if not country_map:
-        bot.send_message(chat_id, "❌ Filhal koi country available nahi hai.")
+        bot.send_message(chat_id, "❌ no any country available please wait.")
         return
 
     # Naye countries detect karo (jo pehle kabhi nahi dekhe) aur users ko notify karo
@@ -504,7 +504,7 @@ def central_callback_router(call):
             delete_last_msg(chat_id)
             show_user_dashboard(call.message)
         else:
-            bot.answer_callback_query(call.id, "❌ Pehle channel join karein!", show_alert=True)
+            bot.answer_callback_query(call.id, "❌ please channel join ", show_alert=True)
         return
 
     # MAIN MENU
@@ -646,8 +646,8 @@ def central_callback_router(call):
                 sent = bot.send_message(chat_id, otp_caption, parse_mode="Markdown", reply_markup=markup)
                 track_msg(chat_id, sent.message_id)
         else:
-            bot.answer_callback_query(call.id, "📥 OTP abhi nahi aaya. Dobara try karein.", show_alert=False)
-            bot.send_message(chat_id, "📥 Inbox khali hai. Thodi der mein phir try karein.")
+            bot.answer_callback_query(call.id, "📥 OTP NOT RECEIVE PLEASE WAIT.", show_alert=False)
+            bot.send_message(chat_id, "📥 Inbox NOT RECEIVE OTP.")
         return
 
     # ADMIN ACCESS DENIED
