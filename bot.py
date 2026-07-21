@@ -7,6 +7,7 @@ import re
 import pycountry
 import random
 import time
+import threading
 
 # ---------------- CONFIGURATION ---------------- #
 BOT_TOKEN = "8937179285:AAHDkUgIzYsWE9gppTY-yz7hdfKUNTEA9GQ"
@@ -54,6 +55,8 @@ BOT_STATS = {
     "otps_delivered": 0
 }
 
+auto_otp_active = {}  # user_id -> bool for Auto OTP toggle
+
 # ---------------- MESSAGE TRACKER ---------------- #
 def delete_last_msg(chat_id):
     if chat_id in user_last_msg:
@@ -65,71 +68,6 @@ def delete_last_msg(chat_id):
 
 def track_msg(chat_id, message_id):
     user_last_msg[chat_id] = message_id
-
-# ---------------- AUTO OTP BACKGROUND ---------------- #
-def auto_otp_background(user_id, chat_id, message_id):
-    if user_id not in user_selections:
-        return
-    count = 0
-    while auto_refresh_active.get(user_id, False) and count < 45:  # ~3 min max
-        time.sleep(4)
-        count += 1
-        try:
-            curr_num = user_selections[user_id]["num"]
-            srv_idx = user_selections[user_id]["server_idx"]
-            sel_country = user_selections[user_id]["country"]
-            flag = get_flag_from_name(sel_country)
-
-            data, error = fetch_api_data(SERVER_CONFIG[srv_idx]["api_sms"])
-            if error or not data or "aaData" not in data:
-                continue
-
-            history_set = load_history(srv_idx)
-            found_otp = None
-            for item in data['aaData']:
-                try:
-                    num, msg = (str(item[3]), str(item[5])) if ("<input" in str(item[0]) or "checkbox" in str(item[0])) else (str(item[2]), str(item[4]))
-                    if "".join(filter(str.isdigit, str(num))) == "".join(filter(str.isdigit, str(curr_num))):
-                        if create_message_signature(num, msg) not in history_set:
-                            found_otp = msg
-                            history_set.add(create_message_signature(num, msg))
-                            break
-                except:
-                    continue
-
-            if found_otp:
-                save_history(srv_idx, history_set)
-                BOT_STATS["otps_delivered"] += 1
-
-                otp_caption = f"""
-────୨ৎ────୨ৎ────
-╰┈➤ ✅ OTP RECEIVE SUCCESS
-────୨ৎ────୨ৎ────
-╰┈➤ {flag} {sel_country}
-────୨ৎ────୨ৎ────
-╰┈➤ UASR SERVICE
-────୨ৎ────୨ৎ────
-╰┈➤ 🔑 OTP : `{found_otp}`
-────୨ৎ────୨ৎ────
-"""
-
-                markup = types.InlineKeyboardMarkup(row_width=1)
-                markup.add(types.InlineKeyboardButton("🔙 Back to Dashboard", callback_data="main_menu"))
-
-                try:
-                    bot.edit_message_caption(
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        caption=otp_caption,
-                        reply_markup=markup,
-                        parse_mode="Markdown"
-                    )
-                except:
-                    pass
-                auto_refresh_active[user_id] = False
-                break
-        except:
-            pass
 
 # ---------------- DATABASE HISTORY ENGINE ---------------- #
 def get_history_filename(server_idx):
@@ -155,6 +93,33 @@ def save_history(server_idx, history_set):
 
 def create_message_signature(number, message):
     return f"{str(number).strip()}|{str(message).strip()}"
+
+
+def find_new_otp_for_number(server_idx, curr_num, history_set):
+    """Reusable OTP finder - reuses existing API and logic without duplication"""
+    data, error = fetch_api_data(SERVER_CONFIG[server_idx]["api_sms"])
+    if error or not data or "aaData" not in data:
+        return None, history_set
+    found_otp = None
+    for item in data['aaData']:
+        try:
+            first_col = str(item[0])
+            if "<input" in first_col or "checkbox" in first_col:
+                num = str(item[3])
+                msg = str(item[5])
+            else:
+                num = str(item[2])
+                msg = str(item[4])
+            if "".join(filter(str.isdigit, num)) == "".join(filter(str.isdigit, str(curr_num))):
+                sig = create_message_signature(num, msg)
+                if sig not in history_set:
+                    found_otp = msg
+                    history_set.add(sig)
+                    break
+        except:
+            continue
+    return found_otp, history_set
+
 
 def initialize_server_history():
     for idx, server in enumerate(SERVER_CONFIG):
@@ -448,7 +413,13 @@ def get_countries_menu(message, page=0):
 
 
 # ---------------- NUMBER SCREEN — SAME MESSAGE EDIT ---------------- #
-def show_number_screen(message, chat_id, server_idx, sel_country, chosen1, chosen2):
+def show_number_screen(message, chat_id, server_idx, sel_country, chosen1, chosen2, user_id=None):
+    if user_id is None:
+        try:
+            user_id = message.from_user.id
+        except:
+            user_id = chat_id
+
     flag = get_flag_from_name(sel_country)
 
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -478,11 +449,11 @@ def show_number_screen(message, chat_id, server_idx, sel_country, chosen1, chose
         callback_data="check_otp"
     ))
 
-    # Auto OTP Toggle Button
-    auto_status = "🟢 Auto OTP : ON" if auto_refresh_active.get(chat_id, False) else "🔴 Auto OTP : OFF"
+    # NEW: Auto OTP Toggle Button (position exactly as requested, nothing else moved)
+    auto_status = "ON" if auto_otp_active.get(user_id, False) else "OFF"
     markup.add(types.InlineKeyboardButton(
-        auto_status,
-        callback_data="auto_toggle"
+        f"🤖 Auto OTP : {auto_status}",
+        callback_data="toggle_auto_otp"
     ))
 
     markup.add(types.InlineKeyboardButton(
@@ -582,7 +553,38 @@ def central_callback_router(call):
     # MAIN MENU
     if call.data == "main_menu":
         bot.answer_callback_query(call.id)
+        auto_otp_active[user_id] = False
+        if user_id in user_selections:
+            user_selections[user_id]["auto_otp"] = False
         show_user_dashboard(call.message)
+        return
+
+    # NEW: Auto OTP Toggle
+    if call.data == "toggle_auto_otp":
+        bot.answer_callback_query(call.id)
+        current = auto_otp_active.get(user_id, False)
+        new_state = not current
+        auto_otp_active[user_id] = new_state
+        if user_id in user_selections:
+            user_selections[user_id]["auto_otp"] = new_state
+
+        # Refresh the number screen to show updated button text (ON/OFF)
+        if user_id in user_selections:
+            sel = user_selections[user_id]
+            show_number_screen(
+                call.message, chat_id,
+                sel.get("server_idx"), sel.get("country"),
+                sel.get("num1"), sel.get("num2"), user_id
+            )
+
+        if new_state:
+            # Start background auto checker thread (daemon so it dies with bot)
+            current_msg_id = user_last_msg.get(chat_id)
+            threading.Thread(
+                target=auto_otp_checker_loop,
+                args=(chat_id, user_id, current_msg_id),
+                daemon=True
+            ).start()
         return
 
     # ADMIN ROUTING — forward to admin_callback (handles auth + dispatch)
@@ -640,7 +642,8 @@ def central_callback_router(call):
                 server_idx,
                 sel_country,
                 chosen1,
-                chosen2
+                chosen2,
+                user_id
             )
         else:
             bot.answer_callback_query(
@@ -659,28 +662,18 @@ def central_callback_router(call):
         sel_country = user_selections[user_id]["country"]
 
         bot.answer_callback_query(call.id, "🔍 Searching OTP...")
-        data, error = fetch_api_data(SERVER_CONFIG[srv_idx]["api_sms"])
-
-        if error or not data or "aaData" not in data:
-            bot.send_message(chat_id, "⚠️ Gateway timeout.")
-            return
 
         history_set = load_history(srv_idx)
-        found_otp = None
-        for item in data['aaData']:
-            try:
-                num, msg = (str(item[3]), str(item[5])) if ("<input" in str(item[0]) or "checkbox" in str(item[0])) else (str(item[2]), str(item[4]))
-                if "".join(filter(str.isdigit, str(num))) == "".join(filter(str.isdigit, str(curr_num))):
-                    if create_message_signature(num, msg) not in history_set:
-                        found_otp = msg
-                        history_set.add(create_message_signature(num, msg))
-                        break
-            except:
-                continue
+        found_otp, history_set = find_new_otp_for_number(srv_idx, curr_num, history_set)
 
         if found_otp:
             save_history(srv_idx, history_set)
             BOT_STATS["otps_delivered"] += 1
+
+            # Turn off auto OTP if it was on (manual GET OTP success)
+            auto_otp_active[user_id] = False
+            if user_id in user_selections:
+                user_selections[user_id]["auto_otp"] = False
 
             # OTP popup alert
             bot.answer_callback_query(call.id, f"✅ OTP: {found_otp}", show_alert=True)
@@ -720,22 +713,6 @@ def central_callback_router(call):
         else:
             bot.answer_callback_query(call.id, "📥 OTP NOT RECEIVE PLEASE WAIT.", show_alert=False)
             bot.send_message(chat_id, "📥 Inbox NOT RECEIVE OTP.")
-        return
-
-    # AUTO OTP TOGGLE
-    if call.data == "auto_toggle":
-        if user_id not in user_selections:
-            bot.answer_callback_query(call.id, "Pehle number select karo!", show_alert=True)
-            return
-
-        auto_refresh_active[user_id] = not auto_refresh_active.get(user_id, False)
-        bot.answer_callback_query(call.id, "✅ Auto OTP Updated!", show_alert=True)
-        
-        sel = user_selections[user_id]
-        show_number_screen(call.message, chat_id, sel["server_idx"], sel["country"], sel["num1"], sel["num2"])
-        
-        if auto_refresh_active.get(user_id, False):
-            threading.Thread(target=auto_otp_background, args=(user_id, chat_id, call.message.message_id), daemon=True).start()
         return
 
     # ADMIN ACCESS DENIED
@@ -1005,6 +982,85 @@ def admin_callback(call):
             safe_save_json(APIS_FILE, SERVER_CONFIG)
             bot.answer_callback_query(call.id, "🗑️ Deleted!")
             show_admin_api_list(call.message)
+
+
+# ----------------- AUTO OTP FEATURE ----------------- #
+def try_deliver_auto_otp(chat_id, user_id, message_id_to_edit):
+    """Auto OTP delivery with NEW success UI - reuses existing find_new_otp_for_number"""
+    if user_id not in user_selections:
+        auto_otp_active[user_id] = False
+        return False
+
+    curr_num = user_selections[user_id]["num"]
+    srv_idx = user_selections[user_id]["server_idx"]
+    sel_country = user_selections[user_id]["country"]
+
+    history_set = load_history(srv_idx)
+    found_otp, history_set = find_new_otp_for_number(srv_idx, curr_num, history_set)
+
+    if found_otp:
+        save_history(srv_idx, history_set)
+        BOT_STATS["otps_delivered"] += 1
+
+        flag = get_flag_from_name(sel_country)
+
+        # Exact new success UI as requested
+        success_caption = (
+            "────୨ৎ────୨ৎ────\n"
+            "╰┈➤ ✅ OTP RECEIVE SUCCESS\n"
+            "────୨ৎ────୨ৎ────\n"
+            f"╰┈➤ {flag} {sel_country}\n"
+            "────୨ৎ────୨ৎ────\n"
+            "╰┈➤ UASR SERVICE\n"
+            "────୨ৎ────୨ৎ────\n"
+            f"╰┈➤ 🔑 OTP : {found_otp}\n"
+            "────୨ৎ────୨ৎ────"
+        )
+
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(types.InlineKeyboardButton("🔙 Back to Dashboard", callback_data="main_menu"))
+
+        try:
+            if message_id_to_edit:
+                bot.edit_message_caption(
+                    chat_id=chat_id,
+                    message_id=message_id_to_edit,
+                    caption=success_caption,
+                    reply_markup=markup,
+                    parse_mode="Markdown"
+                )
+                track_msg(chat_id, message_id_to_edit)
+            else:
+                sent = bot.send_message(chat_id, success_caption, parse_mode="Markdown", reply_markup=markup)
+                track_msg(chat_id, sent.message_id)
+        except Exception as e:
+            print(f"[Auto OTP] Edit error: {e}")
+            try:
+                sent = bot.send_message(chat_id, success_caption, parse_mode="Markdown", reply_markup=markup)
+                track_msg(chat_id, sent.message_id)
+            except:
+                pass
+
+        # Auto stop
+        auto_otp_active[user_id] = False
+        if user_id in user_selections:
+            user_selections[user_id]["auto_otp"] = False
+
+        return True
+
+    return False
+
+
+def auto_otp_checker_loop(chat_id, user_id, initial_msg_id):
+    """Background thread: checks every 3-5 seconds using EXISTING logic"""
+    while auto_otp_active.get(user_id, False):
+        time.sleep(random.randint(3, 5))
+        if not auto_otp_active.get(user_id, False):
+            break
+        current_msg_id = user_last_msg.get(chat_id, initial_msg_id)
+        found = try_deliver_auto_otp(chat_id, user_id, current_msg_id)
+        if found:
+            break
 
 
 # ----------------- INITIATOR RUNTIME ----------------- #
