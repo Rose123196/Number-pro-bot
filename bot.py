@@ -13,7 +13,7 @@ BOT_TOKEN = "8937179285:AAHDkUgIzYsWE9gppTY-yz7hdfKUNTEA9GQ"
 LOGO_PATH = "logo.png"
 
 ADMIN_ID = 8661200480
-AUTHORIZED_USERS = [str(8927512671)]
+AUTHORIZED_USERS = [str(8661200480)]
 
 APIS_FILE = "apis.json"
 USERS_FILE = "users.json"
@@ -476,6 +476,13 @@ def show_number_screen(message, chat_id, server_idx, sel_country, chosen1, chose
     markup.add(types.InlineKeyboardButton(
         "📨 GET OTP CODE 📥",
         callback_data="check_otp"
+    ))
+
+    # Auto OTP Toggle Button
+    auto_status = "🟢 Auto OTP : ON" if auto_refresh_active.get(chat_id, False) else "🔴 Auto OTP : OFF"
+    markup.add(types.InlineKeyboardButton(
+        auto_status,
+        callback_data="auto_toggle"
     ))
 
     markup.add(types.InlineKeyboardButton(
