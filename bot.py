@@ -510,27 +510,19 @@ def show_number_screen(message, chat_id, server_idx, sel_country, chosen1, chose
         "_(Tap the number above to copy)_\n\n"
     )
 
+    # Always send fresh message for reliability (avoid edit issues with photo messages)
+    delete_last_msg(chat_id)
     try:
-        bot.edit_message_caption(
-            chat_id=chat_id,
-            message_id=message.message_id,
-            caption=caption,
-            reply_markup=markup,
-            parse_mode="Markdown"
-        )
-        track_msg(chat_id, message.message_id)
-
-    except:
-        delete_last_msg(chat_id)
-
         sent = bot.send_message(
             chat_id,
             caption,
             reply_markup=markup,
             parse_mode="Markdown"
         )
-
         track_msg(chat_id, sent.message_id)
+    except Exception as e:
+        print(f"[show_number_screen send Error] {e}")
+        bot.send_message(chat_id, "❌ Error loading number screen. Please /start again.")
 
 
 # ---------------- GLOBAL CENTRAL CALLBACK CONTROLLER ---------------- #
@@ -634,14 +626,19 @@ def central_callback_router(call):
                 "country": sel_country
             }
 
-            show_number_screen(
-                call.message,
-                chat_id,
-                server_idx,
-                sel_country,
-                chosen1,
-                chosen2
-            )
+            # Send new number screen message (more reliable than edit)
+            try:
+                show_number_screen(
+                    call.message,
+                    chat_id,
+                    server_idx,
+                    sel_country,
+                    chosen1,
+                    chosen2
+                )
+            except Exception as e:
+                print(f"[Order -> show_number_screen Error] {e}")
+                bot.send_message(chat_id, "❌ Error showing numbers. Please try again or /start.")
         else:
             bot.answer_callback_query(
                 call.id,
